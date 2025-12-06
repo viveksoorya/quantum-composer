@@ -1,0 +1,66 @@
+name: Build and Release
+
+# Trigger the workflow only when you push a tag (e.g., v1.0.0)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Build on Windows, Ubuntu (Linux), and macOS
+        os: [windows-latest, ubuntu-latest, macos-latest]
+
+    steps:
+    # 1. Check out the code
+    - uses: actions/checkout@v3
+
+    # 2. Set up Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10' 
+
+    # 3. Install Dependencies
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    # 4. Build with PyInstaller (OS Specific Configs)
+    
+    # --- WINDOWS BUILD ---
+    - name: Build Executable (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        pyinstaller --noconsole --onefile --collect-all qiskit --name="QuantumComposer" main.py
+
+    # --- LINUX BUILD ---
+    - name: Build Executable (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        # Linux often needs system headers for QT
+        sudo apt-get update
+        sudo apt-get install -y libegl1
+        pyinstaller --noconsole --onefile --collect-all qiskit --name="QuantumComposer_Linux" main.py
+
+    # --- MAC BUILD ---
+    - name: Build Executable (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        pyinstaller --noconsole --onefile --collect-all qiskit --name="QuantumComposer_Mac" main.py
+
+    # 5. Upload Artifacts to the Release Page
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          dist/QuantumComposer.exe
+          dist/QuantumComposer_Linux
+          dist/QuantumComposer_Mac
