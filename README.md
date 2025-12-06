@@ -8,7 +8,7 @@ A professional, drag-and-drop Quantum Circuit Composer built with Python. Design
 
 We provide standalone apps for Windows, Mac, and Linux. You do **not** need to install Python to use these.
 
-**[Click here to view the Latest Release](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/releases/latest)**
+**[Click here to view the Latest Release](https://github.com/viveksoorya/quantum-composer/releases/latest)**
 
 | OS | File to Download | How to Run |
 | :--- | :--- | :--- |
