@@ -9,14 +9,13 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  # JOB 1: Windows and Mac (Standard Matrix)
+  build-win-mac:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # CHANGED: Use ubuntu-20.04 for better compatibility (glibc 2.31)
-        # instead of ubuntu-latest (glibc 2.38+)
-        os: [windows-latest, ubuntu-20.04, macos-latest]
+        os: [windows-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@v3
@@ -38,28 +37,51 @@ jobs:
       run: |
         pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer" main.py
 
-    # --- LINUX BUILD ---
-    - name: Build Executable (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        # Install Qt libs for Ubuntu 20.04
-        sudo apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils
-        
-        pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer_Linux" main.py
-
     # --- MAC BUILD ---
     - name: Build Executable (macOS)
       if: runner.os == 'macOS'
       run: |
         pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer_Mac" main.py
 
-    # --- UPLOAD ---
-    - name: Upload Release Assets
+    - name: Upload Artifacts
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
           dist/QuantumComposer.exe
-          dist/QuantumComposer_Linux
           dist/QuantumComposer_Mac
+
+  # JOB 2: Linux (Containerized for Compatibility + Speed)
+  build-linux:
+    name: Build for Linux (Legacy Compat)
+    runs-on: ubuntu-latest
+    # We run inside a Debian 11 container. This creates an executable 
+    # compatible with almost ALL modern Linux distros (Debian 11+, Ubuntu 20.04+, etc.)
+    container: python:3.10-bullseye
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install System Dependencies
+      run: |
+        apt-get update
+        # Install Qt libraries required for PyQt6
+        apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils
+
+    - name: Install Python Dependencies
+      run: |
+        # Upgrade pip and install requirements
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+
+    - name: Build Executable (Linux)
+      run: |
+        pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer_Linux" main.py
+
+    - name: Upload Artifacts
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          dist/QuantumComposer_Linux
