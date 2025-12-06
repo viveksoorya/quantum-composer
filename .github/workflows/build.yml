@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write  # Explicitly allow creating releases
+  contents: write
 
 jobs:
   build:
@@ -14,7 +14,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # CHANGED: Use ubuntu-20.04 for better compatibility (glibc 2.31)
+        # instead of ubuntu-latest (glibc 2.38+)
+        os: [windows-latest, ubuntu-20.04, macos-latest]
 
     steps:
     - uses: actions/checkout@v3
@@ -34,15 +36,14 @@ jobs:
     - name: Build Executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        # Collect both qiskit AND qiskit_aer to ensure simulation works
         pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer" main.py
 
     # --- LINUX BUILD ---
     - name: Build Executable (Linux)
       if: runner.os == 'Linux'
       run: |
-        # Install required Qt system libraries
         sudo apt-get update
+        # Install Qt libs for Ubuntu 20.04
         sudo apt-get install -y libegl1 libxkbcommon-x11-0 libdbus-1-3 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils
         
         pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer_Linux" main.py
