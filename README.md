@@ -2,7 +2,7 @@
 
 A professional, drag-and-drop Quantum Circuit Composer built with Python. Design quantum circuits, visualize the code in real-time, and run simulations on a local quantum simulator.
 
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/YOUR_USERNAME/YOUR_REPO_NAME)](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME/releases/latest)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/viveksoorya/quantum-composer)](https://github.com/viveksoorya/quantum-composer/releases/latest)
 
 ## 🚀 How to Install and Run (No Coding Knowledge Required)
 
