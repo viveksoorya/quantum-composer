@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QInputDialog, QMessageBox, QVBoxLayout
 from models.circuit_model import CircuitModel
 from models.code_generator import QiskitCodeGenerator
 from models.code_parser import QiskitCodeParser
@@ -12,190 +12,195 @@ class MainController:
         self.parser = QiskitCodeParser()
         self.is_internal_update = False
 
-        # --- View Signals ---
+        # --- SIGNALS ---
         self.view.circuit_view.gate_dropped.connect(self.on_gate_dropped)
         self.view.circuit_view.gate_deleted.connect(self.on_gate_deleted)
         self.view.circuit_view.gate_moved.connect(self.on_gate_moved)
         
-        # --- Toolbar Signals ---
-        self.view.run_action.triggered.connect(self.run_simulation)
+        self.view.run_action.triggered.connect(self.run_simulation_manually)
+        self.view.undo_action.triggered.connect(self.undo)
+        self.view.redo_action.triggered.connect(self.redo)
         
-        # --- File Menu Signals ---
         self.view.save_action.triggered.connect(self.save_project)
         self.view.load_action.triggered.connect(self.load_project)
-        
-        # --- Export Signals ---
         self.view.export_image_action.triggered.connect(self.export_image)
         self.view.export_code_action.triggered.connect(self.export_code)
 
-        # --- Editor Signals (Debounced) ---
+        # Tab Switching Logic
+        self.view.right_tabs.currentChanged.connect(self.on_tab_changed)
+
+        # Editor Debounce
         self.debounce_timer = QTimer()
         self.debounce_timer.setInterval(600)
         self.debounce_timer.setSingleShot(True)
         self.debounce_timer.timeout.connect(self.on_code_parsed)
-        
         self.view.code_view.editor.textChanged.connect(self.on_text_edited)
+
+        # Ensure layouts exist for tabs (Robustness)
+        self._ensure_tab_layouts()
 
         # Initial Render
         self.update_full_ui()
 
-    # --- 1. Export Implementations ---
-    def export_image(self):
-        """Saves the visual grid as a PNG file."""
-        fname = self.view.show_save_dialog("Export Image", "PNG Files (*.png)")
-        if fname:
-            # Grab the CircuitView specifically
-            pixmap = self.view.circuit_view.grab()
-            pixmap.save(fname)
-            print(f"Image saved to {fname}")
+    def _ensure_tab_layouts(self):
+        """Ensures Tab 1 and Tab 2 have layouts to hold the VizView."""
+        # Tab 1: Histogram
+        tab1 = self.view.right_tabs.widget(1)
+        if not tab1.layout():
+            tab1.setLayout(QVBoxLayout())
+            
+        # Tab 2: Bloch Sphere
+        # (This might fail if user didn't update main_window.py, so we try/except)
+        if self.view.right_tabs.count() > 2:
+            tab2 = self.view.right_tabs.widget(2)
+            if not tab2.layout():
+                tab2.setLayout(QVBoxLayout())
 
-    def export_code(self):
-        """Saves the current Qiskit code as a .py file."""
-        fname = self.view.show_save_dialog("Export Python Code", "Python Files (*.py)")
-        if fname:
-            code = self.view.code_view.get_code()
-            with open(fname, 'w') as f:
-                f.write(code)
-            print(f"Code saved to {fname}")
+    def update_full_ui(self):
+        """Refreshes the entire application state."""
+        self.update_code_from_model()
+        self.redraw_circuit_from_model()
 
-    # --- 2. Gate Logic ---
+    # --- UNDO / REDO ---
+    def undo(self):
+        if self.model.undo():
+            self.update_full_ui()
+            self.on_tab_changed(self.view.right_tabs.currentIndex())
 
-    # Helper to check if the path between q_start and q_end is clear at time t
-    def is_path_clear(self, q1, q2, time_index):
-        start = min(q1, q2)
-        end = max(q1, q2)
+    def redo(self):
+        if self.model.redo():
+            self.update_full_ui()
+            self.on_tab_changed(self.view.right_tabs.currentIndex())
+
+    # --- TAB SWITCHING (The Magic Swap) ---
+    def on_tab_changed(self, index):
+        """Moves the VizView to the active tab and runs the specific sim."""
+        viz_widget = self.view.viz_view
         
-        # Check existing operations in the model
-        ops = self.model.get_operations()
-        for op in ops:
-            # If an operation exists at this time index
-            if op['index'] == time_index:
-                # If it's on any qubit between (start, end) OR on the start/end qubits themselves
-                # Note: We allow replacing the exact gate if we are dropping ON it, 
-                # but we shouldn't allow dropping if there is something "in the way"
-                q = op['qubit']
-                t = op.get('target')
-                
-                # Check simple collision (gate already exists on intermediate wire)
-                if start < q < end:
-                    return False
-                
-                # Check crossing lines collision (e.g., trying to place CNOT(0,2) when CNOT(1,3) exists)
-                # This is complex, but for now, just checking qubit occupancy is enough for "blocking"
-        return True
+        try:
+            # Tab 0: Code (Do nothing)
+            if index == 0:
+                pass
 
+            # Tab 1: Histogram
+            elif index == 1:
+                # Move widget to Tab 1
+                target_tab = self.view.right_tabs.widget(1)
+                if viz_widget.parent() != target_tab:
+                    target_tab.layout().addWidget(viz_widget)
+                
+                # Run Simulation
+                counts = self.model.run_simulation()
+                viz_widget.plot_histogram(counts)
+
+            # Tab 2: Bloch Sphere
+            elif index == 2:
+                # Move widget to Tab 2
+                target_tab = self.view.right_tabs.widget(2)
+                if viz_widget.parent() != target_tab:
+                    target_tab.layout().addWidget(viz_widget)
+                
+                # Run Simulation
+                statevector = self.model.get_statevector()
+                viz_widget.plot_bloch_multivector(statevector, self.model.num_qubits)
+
+        except Exception as e:
+            print(f"Visualization Error: {e}")
+
+    # --- SIMULATION ---
+    def run_simulation_manually(self):
+        # Force refresh current tab
+        self.on_tab_changed(self.view.right_tabs.currentIndex())
+
+    # --- GATE LOGIC ---
     def on_gate_dropped(self, gate_type, qubit_index, time_index):
         target_index = None
         params = None
-        
-        # Handle Multi-Qubit Targets
+
         if gate_type in ["CX", "CY", "CZ", "CH", "SWAP"]:
-            target_index = self.view.show_input_dialog(f"{gate_type} Gate", "Select Target Qubit:")
+            target_index = self.view.show_input_dialog(f"{gate_type} Gate", "Select Target:")
             if target_index is None or target_index == qubit_index:
                 self.view.circuit_view.drop_zones[(qubit_index, time_index)].clear_visual()
                 return
-            
-            # --- NEW CHECK: IS PATH CLEAR? ---
-            if not self.is_path_clear(qubit_index, target_index, time_index):
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.warning(self.view, "Invalid Placement", 
-                                    "Cannot place gate here: Intermediate wires are blocked by other gates.")
-                self.view.circuit_view.drop_zones[(qubit_index, time_index)].clear_visual()
-                return
 
-        # Handle Parameters
         if gate_type in ["RX", "RY", "RZ", "P"]:
-            text, ok = QInputDialog.getText(self.view, "Rotation Angle", "Enter Angle (radians):", text="1.57")
+            text, ok = QInputDialog.getText(self.view, "Rotation", "Angle (radians):", text="1.57")
             if ok and text:
                 try: params = float(text)
                 except ValueError: return
-            else: return
+            else: 
+                self.view.circuit_view.drop_zones[(qubit_index, time_index)].clear_visual()
+                return
 
+        # SNAPSHOT & UPDATE
+        self.model.save_snapshot()
         self.model.add_gate(gate_type, qubit_index, time_index, target_index, params)
-        self.redraw_circuit_from_model()
-        self.update_code_from_model()
-
+        self.update_full_ui()
+        
+        # Auto-refresh visualization if visible
+        if self.view.right_tabs.currentIndex() > 0:
+            self.on_tab_changed(self.view.right_tabs.currentIndex())
 
     def on_gate_deleted(self, q, t):
+        self.model.save_snapshot()
         self.model.remove_gate(q, t)
-        self.update_code_from_model()
+        self.update_full_ui()
+        if self.view.right_tabs.currentIndex() > 0:
+            self.on_tab_changed(self.view.right_tabs.currentIndex())
 
     def on_gate_moved(self, oq, ot, nq, nt):
         ops = self.model.get_operations()
         op = next((o for o in ops if o['qubit'] == oq and o['index'] == ot), None)
         if op:
+            self.model.save_snapshot()
             self.model.remove_gate(oq, ot)
-            self.model.add_gate(op['gate'], nq, nt, op.get('target'))
-            self.update_code_from_model()
-            self.redraw_circuit_from_model()
+            self.model.add_gate(op['gate'], nq, nt, op.get('target'), op.get('params'))
+            self.update_full_ui()
+            if self.view.right_tabs.currentIndex() > 0:
+                self.on_tab_changed(self.view.right_tabs.currentIndex())
 
-    # --- 3. Code Editor Logic ---
+    # --- HELPERS ---
     def on_text_edited(self):
-        """Called whenever user types in the editor."""
-        if self.is_internal_update:
-            return 
-        self.debounce_timer.start()
+        if not self.is_internal_update: self.debounce_timer.start()
 
     def on_code_parsed(self):
-        """Called after user stops typing."""
+        self.model.save_snapshot()
         code = self.view.code_view.get_code()
         new_ops = self.parser.parse_to_model(code, self.model.num_qubits)
-        
         if new_ops is not None:
             self.model.operations = new_ops
             self.redraw_circuit_from_model()
 
-    # --- 4. Helpers ---
     def update_code_from_model(self):
-        """Generates code from grid and puts it in editor."""
         self.is_internal_update = True
         ops = self.model.get_operations()
         code = self.code_gen.generate(self.model.num_qubits, ops)
         self.view.code_view.update_code(code)
         self.is_internal_update = False
 
-    # ... Update redraw to pass params ...
     def redraw_circuit_from_model(self):
         self.view.circuit_view.clear_grid()
         for op in self.model.get_operations():
-            gate = op['gate']
-            q = op['qubit']
-            idx = op['index']
-            target = op.get('target')
-            params = op.get('params')
-
-            self.view.circuit_view.place_gate_visual(gate, q, idx, target, params)
-
-            # --- NEW: Draw Connectors for Multi-Qubit Gates ---
-            if target is not None:
-                start, end = min(q, target), max(q, target)
-                # Fill in every qubit strictly between start and end
-                for intermediate_q in range(start + 1, end):
-                    self.view.circuit_view.place_connector_visual(intermediate_q, idx)
-
-
-
-    def update_full_ui(self):
-        """Syncs everything."""
-        self.update_code_from_model()
-
-    # --- 5. Simulation & File IO ---
-    def run_simulation(self):
-        # We simulate whatever is currently in the model 
-        counts = self.model.run_simulation()
-        self.view.viz_view.plot_histogram(counts)
-        self.view.right_tabs.setCurrentIndex(1)
+            self.view.circuit_view.place_gate_visual(
+                op['gate'], op['qubit'], op['index'], op.get('target'), op.get('params')
+            )
 
     def save_project(self):
-        fname = self.view.show_save_dialog("Save Project", "JSON Files (*.json)")
+        fname = self.view.show_save_dialog("Save", "JSON (*.json)")
         if fname:
-            with open(fname, 'w') as f:
-                f.write(self.model.to_json())
+            with open(fname, 'w') as f: f.write(self.model.to_json())
 
     def load_project(self):
         fname = self.view.show_load_dialog()
         if fname:
-            with open(fname, 'r') as f:
-                self.model.load_from_json(f.read())
-            self.redraw_circuit_from_model()
+            with open(fname, 'r') as f: self.model.load_from_json(f.read())
             self.update_full_ui()
+    
+    def export_image(self):
+        fname = self.view.show_save_dialog("Export", "PNG (*.png)")
+        if fname: self.view.circuit_view.grab().save(fname)
+
+    def export_code(self):
+        fname = self.view.show_save_dialog("Export", "Python (*.py)")
+        if fname:
+            with open(fname, 'w') as f: f.write(self.view.code_view.get_code())
