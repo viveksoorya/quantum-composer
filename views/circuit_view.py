@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QFrame, QMenu
+from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QFrame, QMenu, QApplication
 from PyQt6.QtCore import Qt, pyqtSignal, QMimeData, QPoint
-from PyQt6.QtGui import QDrag, QAction, QPainter, QPen, QColor, QPixmap
+from PyQt6.QtGui import QDrag, QAction, QPainter, QPen, QColor, QPixmap, QFont, QFontMetrics
 from .styles import GATE_CSS
 
 class DropLabel(QLabel):
@@ -37,31 +37,116 @@ class DropLabel(QLabel):
             payload = f"MOVE:{self.current_gate}:{self.qubit_idx}:{self.time_idx}"
             mime.setText(payload)
             drag.setMimeData(mime)
-            pixmap = self.grab()
+
+            # Create a styled, semi-transparent pixmap for the drag (shadow-like)
+            pixmap = QPixmap(self.width(), self.height())
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            rect = pixmap.rect().adjusted(4, 4, -4, -4)
+            painter.setBrush(QColor(20, 40, 120, 160))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(rect, 8, 8)
+            # Text
+            font = QFont("Sans", 10, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.setPen(QColor(255, 255, 255, 220))
+            fm = QFontMetrics(font)
+            tx = (pixmap.width() - fm.horizontalAdvance(self.current_gate)) // 2
+            ty = (pixmap.height() + fm.ascent() - fm.descent()) // 2
+            painter.drawText(tx, ty, self.current_gate)
+            painter.end()
+
             drag.setPixmap(pixmap)
             drag.setHotSpot(self.rect().center())
-            drag.exec(Qt.DropAction.MoveAction)
+
+            # Change cursor to indicate move
+            QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
+            try:
+                drag.exec(Qt.DropAction.MoveAction)
+            finally:
+                QApplication.restoreOverrideCursor()
 
     def dragEnterEvent(self, event):
         if self.current_gate == "CONNECTOR": event.ignore(); return
-        if event.mimeData().hasText(): event.acceptProposedAction()
+        # Show a lightweight shadow/preview when dragging over this zone
+        if event.mimeData().hasText():
+            text = event.mimeData().text()
+            # Parse MOVE payloads: "MOVE:NAME:old_q:old_t"
+            if text.startswith("MOVE:"):
+                _, gate_name, _, _ = text.split(":")
+            else:
+                gate_name = text
+            self.show_shadow(gate_name)
+            # change cursor based on action
+            if text.startswith("MOVE:"):
+                QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
+            else:
+                QApplication.setOverrideCursor(Qt.CursorShape.DragCopyCursor)
+            event.acceptProposedAction()
 
     def dragMoveEvent(self, event):
         if self.current_gate == "CONNECTOR": event.ignore(); return
-        if event.mimeData().hasText(): event.acceptProposedAction()
+        if event.mimeData().hasText():
+            # keep the shadow updated (in case different gate types show different sizes)
+            text = event.mimeData().text()
+            if text.startswith("MOVE:"):
+                _, gate_name, _, _ = text.split(":")
+            else:
+                gate_name = text
+            self.show_shadow(gate_name)
+            event.acceptProposedAction()
 
     def dropEvent(self, event):
         if self.current_gate == "CONNECTOR": event.ignore(); return
         data = event.mimeData().text()
+        # Clear any preview and restore cursor
+        self.clear_shadow()
+        QApplication.restoreOverrideCursor()
+        
+        # determine leftmost available slot in this qubit row (to keep gates left-aligned)
+        def _find_circuit_view(widget):
+            p = widget.parent()
+            while p is not None and not hasattr(p, 'drop_zones'):
+                p = p.parent()
+            return p
+
+        def _leftmost_available(qubit_idx, exclude_pos=None):
+            cv = _find_circuit_view(self)
+            if not cv:
+                return self.time_idx
+            for t in range(cv.num_steps):
+                zone = cv.drop_zones.get((qubit_idx, t))
+                if zone is None:
+                    continue
+                # allow placing back into the original slot when excluding
+                if exclude_pos and (qubit_idx, t) == exclude_pos:
+                    return t
+                if zone.current_gate is None:
+                    return t
+            # fallback: use the drop zone's index
+            return self.time_idx
+
         if data.startswith("MOVE:"):
             _, gate_name, old_q, old_t = data.split(":")
             old_q, old_t = int(old_q), int(old_t)
+            # if moving within same position, ignore
             if old_q == self.qubit_idx and old_t == self.time_idx:
                 event.ignore(); return
-            self.gate_repositioned.emit(old_q, old_t, self.qubit_idx, self.time_idx)
+
+            new_t = _leftmost_available(self.qubit_idx, exclude_pos=(old_q, old_t))
+            # Emit reposition using the leftmost available column
+            self.gate_repositioned.emit(old_q, old_t, self.qubit_idx, new_t)
         else:
-            self.gate_placed.emit(data, self.qubit_idx, self.time_idx)
+            new_t = _leftmost_available(self.qubit_idx)
+            self.gate_placed.emit(data, self.qubit_idx, new_t)
         event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):
+        # Clear preview when drag leaves
+        self.clear_shadow()
+        QApplication.restoreOverrideCursor()
+        event.accept()
 
     # --- Visual Logic ---
     
@@ -148,6 +233,20 @@ class DropLabel(QLabel):
         self.target_idx = None
         self.setText("")
         self.setStyleSheet("border: none; background-color: transparent;") 
+
+    # --- Preview / Shadow helpers ---
+    def show_shadow(self, gate_text):
+        # Don't overwrite an actual gate visual; show a lightweight translucent preview instead
+        if self.current_gate is not None: return
+        style = f"background-color: rgba(20,40,120,0.45); color: white; border-radius: 8px; font-weight: bold;"
+        self.setText(gate_text)
+        self.setStyleSheet(style)
+
+    def clear_shadow(self):
+        # Only clear if it is a preview (i.e., current_gate is None)
+        if self.current_gate is None:
+            self.setText("")
+            self.setStyleSheet("border: none; background-color: transparent;")
 
 
 class CircuitView(QWidget):

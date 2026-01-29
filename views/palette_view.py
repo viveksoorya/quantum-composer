@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QScrollArea
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QScrollArea, QApplication
 from PyQt6.QtCore import Qt, QMimeData
-from PyQt6.QtGui import QDrag
+from PyQt6.QtGui import QDrag, QPainter, QColor, QPixmap, QFont, QFontMetrics
 
 class DraggableButton(QPushButton):
     def __init__(self, text, parent=None):
@@ -14,7 +14,35 @@ class DraggableButton(QPushButton):
             mime = QMimeData()
             mime.setText(self.gate_type)
             drag.setMimeData(mime)
-            drag.exec(Qt.DropAction.CopyAction)
+
+            # Create a semi-transparent rounded pixmap for the drag (IBM-like shadow)
+            w, h = 50, 50
+            pixmap = QPixmap(w, h)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            rect = pixmap.rect().adjusted(4, 4, -4, -4)
+            painter.setBrush(QColor(20, 40, 120, 160))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(rect, 8, 8)
+            font = QFont("Sans", 10, QFont.Weight.Bold)
+            painter.setFont(font)
+            painter.setPen(QColor(255, 255, 255, 220))
+            fm = QFontMetrics(font)
+            tx = (w - fm.horizontalAdvance(self.gate_type)) // 2
+            ty = (h + fm.ascent() - fm.descent()) // 2
+            painter.drawText(tx, ty, self.gate_type)
+            painter.end()
+
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(pixmap.rect().center())
+
+            # Cursor: show copy cursor while dragging from palette
+            QApplication.setOverrideCursor(Qt.CursorShape.DragCopyCursor)
+            try:
+                drag.exec(Qt.DropAction.CopyAction)
+            finally:
+                QApplication.restoreOverrideCursor()
 
 class PaletteView(QWidget):
     def __init__(self):

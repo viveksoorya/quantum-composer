@@ -92,7 +92,8 @@ class MainController:
         if gate_type in ["CX", "CY", "CZ", "CH", "SWAP"]:
             target_index = self.view.show_input_dialog(f"{gate_type} Gate", "Select Target Qubit:")
             if target_index is None or target_index == qubit_index:
-                self.view.circuit_view.drop_zones[(qubit_index, time_index)].clear_visual()
+                # Invalid selection; keep model unchanged and force a redraw from model
+                self.redraw_circuit_from_model()
                 return
             
             # --- NEW CHECK: IS PATH CLEAR? ---
@@ -100,7 +101,8 @@ class MainController:
                 from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(self.view, "Invalid Placement", 
                                     "Cannot place gate here: Intermediate wires are blocked by other gates.")
-                self.view.circuit_view.drop_zones[(qubit_index, time_index)].clear_visual()
+                # Re-draw from model to ensure view matches model (don't manipulate view state directly)
+                self.redraw_circuit_from_model()
                 return
 
         # Handle Parameters
@@ -111,9 +113,10 @@ class MainController:
                 except ValueError: return
             else: return
 
+        # Add gate to model (model enforces uniqueness) then redraw
         self.model.add_gate(gate_type, qubit_index, time_index, target_index, params)
-        self.redraw_circuit_from_model()
         self.update_code_from_model()
+        self.redraw_circuit_from_model()
 
 
     def on_gate_deleted(self, q, t):
@@ -121,13 +124,16 @@ class MainController:
         self.update_code_from_model()
 
     def on_gate_moved(self, oq, ot, nq, nt):
-        ops = self.model.get_operations()
-        op = next((o for o in ops if o['qubit'] == oq and o['index'] == ot), None)
-        if op:
-            self.model.remove_gate(oq, ot)
-            self.model.add_gate(op['gate'], nq, nt, op.get('target'))
-            self.update_code_from_model()
+        # Use an atomic model operation for move; if it fails, redraw to restore view
+        success = self.model.move_gate(oq, ot, nq, nt)
+        if not success:
+            # Move failed (source missing or target occupied) — re-sync the view
             self.redraw_circuit_from_model()
+            return
+
+        # Move succeeded — update code and redraw from authoritative model
+        self.update_code_from_model()
+        self.redraw_circuit_from_model()
 
     # --- 3. Code Editor Logic ---
     def on_text_edited(self):

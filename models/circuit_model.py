@@ -19,6 +19,31 @@ class CircuitModel:
         })
         self.operations.sort(key=lambda x: x['index'])
 
+    def move_gate(self, old_q, old_t, new_q, new_t):
+        """Atomically move a gate from (old_q, old_t) to (new_q, new_t).
+        Returns True on success, False if the source doesn't exist or target occupied by a different gate.
+        """
+        op = next((o for o in self.operations if o['qubit'] == old_q and o['index'] == old_t), None)
+        if not op:
+            return False
+
+        # If target already has a gate (different from the moving one), reject
+        conflict = next((o for o in self.operations if o['qubit'] == new_q and o['index'] == new_t), None)
+        if conflict and not (conflict is op):
+            return False
+
+        # Perform move
+        self.remove_gate(old_q, old_t)
+        self.operations.append({
+            'gate': op['gate'],
+            'qubit': new_q,
+            'target': op.get('target'),
+            'params': op.get('params'),
+            'index': new_t
+        })
+        self.operations.sort(key=lambda x: x['index'])
+        return True
+
     def remove_gate(self, qubit_index, time_index):
         self.operations = [op for op in self.operations 
                            if not (op['qubit'] == qubit_index and op['index'] == time_index)]
