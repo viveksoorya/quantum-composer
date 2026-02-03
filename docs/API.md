@@ -1,37 +1,78 @@
-# CircuitView and DropLabel API
+# Quantum Composer API Documentation
 
-## CircuitView
-The `CircuitView` class represents the main visual interface for the quantum circuit.
+This document provides a comprehensive API reference for the Quantum Composer codebase, covering models, views, controllers, and the main entry point.
 
-### Signals
-- `gate_dropped(str, int, int)`: Emitted when a gate is dropped.
-- `gate_deleted(int, int)`: Emitted when a gate is deleted.
-- `gate_moved(int, int, int, int)`: Emitted when a gate is moved.
+---
 
-### Methods
-- `__init__(num_qubits: int = 3, num_steps: int = 10)`: Initializes the circuit view.
-- `setup_grid()`: Sets up the grid layout.
-- `paintEvent(event)`: Custom painting logic.
-- `clear_grid()`: Clears all gates.
-- `place_gate_visual(...)`: Places a gate visually.
-- `place_connector_visual(...)`: Places a connector visually.
-- `show_circuit_array()`: Displays the circuit array.
+## Models
 
-## DropLabel
-The `DropLabel` class represents a draggable and droppable label for placing quantum gates.
+### `circuit_model.py`
+- **`CircuitModel`**: Manages the quantum circuit's state, including gates, qubits, and undo/redo functionality.
+  - `add_gate(gate: str, qubit: int, position: int)`: Adds a gate to the circuit.
+  - `remove_gate(qubit: int, position: int)`: Removes a gate from the circuit.
+  - `move_gate(old_qubit: int, old_position: int, new_qubit: int, new_position: int)`: Moves a gate within the circuit.
+  - `get_circuit() -> List[Dict]`: Returns the current circuit state as a list of dictionaries.
 
-### Signals
-- `gate_placed(str, int, int)`: Emitted when a gate is placed.
-- `gate_removed(int, int)`: Emitted when a gate is removed.
-- `gate_repositioned(int, int, int, int)`: Emitted when a gate is repositioned.
+### `code_generator.py`
+- **`CodeGenerator`**: Converts the circuit model into Qiskit code.
+  - `generate_code(circuit: List[Dict]) -> str`: Generates Qiskit code from the circuit.
 
-### Methods
-- `__init__(qubit_idx: int, time_idx: int)`: Initializes the label.
-- `contextMenuEvent(event)`: Displays a context menu.
-- `mouseMoveEvent(event)`: Initiates a drag operation.
-- `dragEnterEvent(event)`: Handles drag enter.
-- `dragMoveEvent(event)`: Updates shadow preview.
-- `dropEvent(event)`: Handles drop event.
-- `dragLeaveEvent(event)`: Clears shadow preview.
-- `set_visual_gate(...)`: Sets the visual representation of a gate.
-- `clear_visual()`: Clears the visual representation.
+### `code_parser.py`
+- **`CodeParser`**: Parses Qiskit code into the circuit model.
+  - `parse_code(code: str) -> List[Dict]`: Parses Qiskit code and returns the circuit structure.
+
+---
+
+## Views
+
+### `circuit_view.py`
+- **`CircuitView`**: Represents the main visual interface for the quantum circuit.
+  - Signals:
+    - `gate_dropped(str, int, int)`
+    - `gate_deleted(int, int)`
+    - `gate_moved(int, int, int, int)`
+  - Methods:
+    - `__init__(num_qubits: int = 3, num_steps: int = 10)`
+    - `setup_grid()`
+    - `paintEvent(event)`
+    - `clear_grid()`
+    - `place_gate_visual(...)`
+    - `place_connector_visual(...)`
+    - `show_circuit_array()`
+
+### `palette_view.py`
+- **`PaletteView`**: Displays draggable quantum gates for the user to place on the circuit.
+  - Methods:
+    - `__init__()`
+    - `populate_palette()`
+
+### `visualization_view.py`
+- **`VisualizationView`**: Displays simulation results, including histograms and Bloch sphere visualizations.
+  - Methods:
+    - `update_histogram(data: Dict)`
+    - `update_bloch_sphere(state: List[float])`
+
+---
+
+## Controllers
+
+### `main_controller.py`
+- **`MainController`**: Handles user interactions and updates the model and views.
+  - Methods:
+    - `on_gate_added(gate: str, qubit: int, position: int)`
+    - `on_gate_removed(qubit: int, position: int)`
+    - `on_gate_moved(old_qubit: int, old_position: int, new_qubit: int, new_position: int)`
+    - `run_simulation()`
+
+---
+
+## Main Entry Point
+
+### `main.py`
+- Initializes the application and sets up the main window.
+  - Methods:
+    - `main()`: Entry point for the application.
+
+---
+
+This API documentation provides an overview of the key components and their methods, signals, and responsibilities. For detailed usage examples, refer to the README or the source code.
