@@ -79,12 +79,21 @@ class CircuitModel:
                 elif g == 'swap': qc.swap(q, t)
                 elif g == 'cz': qc.cz(q, t)
 
-        qc.measure_all()
+        # Save a copy of the circuit before measurement for statevector simulation
+        qc_no_measure = qc.copy()
         
+        # Run measurement simulation for histogram
+        qc.measure_all()
         simulator = AerSimulator()
         compiled_circuit = transpile(qc, simulator)
         result = simulator.run(compiled_circuit, shots=1024).result()
-        return result.get_counts()
+        counts = result.get_counts()
+        
+        # Run statevector simulation for Bloch sphere visualization
+        from qiskit.quantum_info import Statevector
+        statevector = Statevector.from_instruction(qc_no_measure)
+        
+        return counts, statevector
 
     # (Keep to_json and load_from_json as they were)
     def to_json(self):

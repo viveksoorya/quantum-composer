@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import QInputDialog, QPushButton, QMessageBox
 from models.circuit_model import CircuitModel
 from models.code_generator import QiskitCodeGenerator
 from models.code_parser import QiskitCodeParser
+import numpy as np
 
 class MainController:
     def __init__(self, view):
@@ -192,9 +193,40 @@ class MainController:
     # --- 5. Simulation & File IO ---
     def run_simulation(self):
         # We simulate whatever is currently in the model 
-        counts = self.model.run_simulation()
+        counts, statevector = self.model.run_simulation()
         self.view.viz_view.plot_histogram(counts)
+        
+        # Update inline qubit state visualizations
+        self._update_qubit_visualizations(statevector)
+        
         self.view.right_tabs.setCurrentIndex(1)
+    
+    def _update_qubit_visualizations(self, statevector):
+        """Extract individual qubit Bloch vectors and update inline visualizations."""
+        from qiskit.quantum_info import partial_trace, DensityMatrix
+        
+        for qubit_idx in range(self.model.num_qubits):
+            # Calculate reduced density matrix for this qubit
+            traced_out = [i for i in range(self.model.num_qubits) if i != qubit_idx]
+            reduced_dm = partial_trace(statevector, traced_out)
+            
+            # Calculate Bloch vector components
+            dm_array = reduced_dm.data
+            
+            # Pauli matrices
+            sx = np.array([[0, 1], [1, 0]], dtype=complex)
+            sy = np.array([[0, -1j], [1j, 0]], dtype=complex)
+            sz = np.array([[1, 0], [0, -1]], dtype=complex)
+            
+            # Calculate expectation values
+            x = np.real(np.trace(dm_array @ sx))
+            y = np.real(np.trace(dm_array @ sy))
+            z = np.real(np.trace(dm_array @ sz))
+            
+            # Update the visualization widget
+            if qubit_idx in self.view.circuit_view.qubit_state_widgets:
+                widget = self.view.circuit_view.qubit_state_widgets[qubit_idx]
+                widget.set_state((x, y, z))
 
     def save_project(self):
         fname = self.view.show_save_dialog("Save Project", "JSON Files (*.json)")

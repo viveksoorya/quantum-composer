@@ -2,6 +2,8 @@ from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QFrame, QMenu, QApplic
 from PyQt6.QtCore import Qt, pyqtSignal, QMimeData, QPoint
 from PyQt6.QtGui import QDrag, QAction, QPainter, QPen, QColor, QPixmap, QFont, QFontMetrics
 from .styles import GATE_CSS
+from .qubit_state_widget import QubitStateWidget
+from .phase_legend_widget import PhaseLegendWidget
 
 class DropLabel(QLabel):
     gate_placed = pyqtSignal(str, int, int)
@@ -237,6 +239,7 @@ class CircuitView(QWidget):
         self.num_qubits = num_qubits
         self.num_steps = num_steps
         self.drop_zones = {}
+        self.qubit_state_widgets = {}  # Store inline visualization widgets
         self.setup_grid()
 
         # Add a button to display the circuit array
@@ -248,6 +251,10 @@ class CircuitView(QWidget):
         self.display_visual_button = QPushButton("Show Visual State", self)
         self.display_visual_button.clicked.connect(self.show_visual_state)
         self.grid.addWidget(self.display_visual_button, num_qubits + 1, 0, 1, num_steps + 1)
+
+        # Add phase color scheme legend at the bottom
+        self.phase_legend = PhaseLegendWidget(self)
+        self.grid.addWidget(self.phase_legend, num_qubits + 2, 0, 1, num_steps + 2, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
     def setup_grid(self):
         for q in range(self.num_qubits):
@@ -267,6 +274,11 @@ class CircuitView(QWidget):
                 zone.gate_repositioned.connect(self.gate_moved)
                 self.grid.addWidget(zone, q, t+1, Qt.AlignmentFlag.AlignCenter)
                 self.drop_zones[(q, t)] = zone
+            
+            # Add inline qubit state visualization at the end of the line
+            state_widget = QubitStateWidget(q)
+            self.grid.addWidget(state_widget, q, self.num_steps + 1, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            self.qubit_state_widgets[q] = state_widget
 
     def paintEvent(self, event):
         super().paintEvent(event)
