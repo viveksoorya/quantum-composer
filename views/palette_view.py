@@ -75,6 +75,27 @@ class PaletteView(QWidget):
             btn = DraggableButton(g)
             layout.addWidget(btn)
         
+        # Add separator and custom gate button
+        separator = QLabel("—" * 10)
+        separator.setStyleSheet("color: #ccc; margin: 10px 0;")
+        separator.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(separator)
+        
+        custom_btn = DraggableButton("CUSTOM")
+        custom_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #9b59b6;
+                color: white;
+                border-radius: 5px;
+                padding: 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #8e44ad;
+            }
+        """)
+        layout.addWidget(custom_btn)
+        
         layout.addStretch()
         scroll.setWidget(content)
         main_layout.addWidget(scroll)

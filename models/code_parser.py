@@ -1,6 +1,8 @@
 import sys
 from io import StringIO
 from qiskit import QuantumCircuit
+from qiskit.circuit.library import UnitaryGate
+import numpy as np
 
 class QiskitCodeParser:
     @staticmethod
@@ -51,10 +53,20 @@ class QiskitCodeParser:
             qubits = instruction.qubits
             params = instruction.operation.params
             
-            if op_name not in gate_map:
+            # Check if this is a custom unitary gate
+            is_unitary = isinstance(instruction.operation, UnitaryGate)
+            
+            if op_name not in gate_map and not is_unitary:
                 continue
-                
-            ui_gate = gate_map[op_name]
+            
+            # For unitary gates, treat as 'CUSTOM'
+            if is_unitary:
+                ui_gate = 'CUSTOM'
+                # Get the matrix from the unitary gate
+                matrix = instruction.operation.to_matrix()
+            else:
+                ui_gate = gate_map[op_name]
+                matrix = None
             
             # Identify Qubit Indices
             q_indices = [qc.find_bit(q).index for q in qubits]
@@ -84,12 +96,6 @@ class QiskitCodeParser:
             current_time = min_valid_time
             
             # 2. Add the operation
-            # Note: For Barrier, we only add one entry per column in the model usually,
-            # but the visualizer expects one per qubit. To keep parser simple, 
-            # we just add the "Primary" operation here. The visualizer handles the rest?
-            # Actually, your Controller handles Barrier by adding it to all.
-            # But the PARSER should output exactly what the model expects.
-            
             param_val = params[0] if params else None
             
             if ui_gate == "BARRIER":
@@ -103,13 +109,17 @@ class QiskitCodeParser:
                         'index': current_time
                     })
             else:
-                operations.append({
+                op_dict = {
                     'gate': ui_gate,
                     'qubit': main_qubit,
                     'target': target_qubit,
                     'params': param_val,
                     'index': current_time
-                })
+                }
+                # Add matrix for custom gates
+                if matrix is not None:
+                    op_dict['matrix'] = matrix.tolist() if hasattr(matrix, 'tolist') else matrix
+                operations.append(op_dict)
             
             # 3. Advance Cursors
             # Every qubit involved in this span must now move to the NEXT column

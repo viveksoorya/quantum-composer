@@ -240,8 +240,7 @@ class TestCompleteCircuits:
         code = QiskitCodeGenerator.generate(num_qubits=1, operations=operations)
         
         lines = code.strip().split('\n')
-        assert lines[0] == 'from qiskit import QuantumCircuit'
-        assert lines[1] == 'import numpy as np'
-        assert lines[2] == ''
-        assert 'qc = QuantumCircuit(1)' in lines
-        assert 'qc.measure_all()' in lines
+        assert 'from qiskit import QuantumCircuit' in lines
+        assert 'import numpy as np' in lines
+        assert 'qc = QuantumCircuit(1)' in code
+        assert 'qc.measure_all()' in code

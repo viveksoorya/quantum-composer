@@ -4,6 +4,8 @@ from PyQt6.QtGui import QDrag, QAction, QPainter, QPen, QColor, QPixmap, QFont, 
 from .styles import GATE_CSS
 from .qubit_state_widget import QubitStateWidget
 from .phase_legend_widget import PhaseLegendWidget
+from .custom_gate_analyzer import CustomGateAnalyzer
+import numpy as np
 
 class DropLabel(QLabel):
     gate_placed = pyqtSignal(str, int, int)
@@ -20,6 +22,7 @@ class DropLabel(QLabel):
         
         self.current_gate = None
         self.target_idx = None
+        self.custom_matrix = None  # For custom gates
 
     # --- Interaction Logic ---
     def contextMenuEvent(self, event):
@@ -127,13 +130,36 @@ class DropLabel(QLabel):
 
     # --- Visual Logic ---
     
-    def set_visual_gate(self, text, params=None):
+    def set_visual_gate(self, text, params=None, matrix=None):
         self.current_gate = text
         self.target_idx = None
+        self.custom_matrix = matrix
         display_text = text
         style = GATE_CSS
         
-        if params is not None:
+        # Handle custom gates with meaningful icons
+        if text == "U" and matrix is not None:
+            properties = CustomGateAnalyzer.analyze_matrix(matrix)
+            display_text = properties['icon']
+            
+            # Color-coded background based on gate type
+            color = properties['color']
+            style = f"""
+                background-color: {color};
+                color: white;
+                border: 2px solid {color};
+                border-radius: 6px;
+                font-family: 'Segoe UI', sans-serif;
+                font-weight: bold;
+                font-size: 18px;
+                min-width: 46px;
+                min-height: 46px;
+            """
+            
+            # Set tooltip with gate information
+            tooltip = CustomGateAnalyzer.get_tooltip(properties)
+            self.setToolTip(tooltip)
+        elif params is not None:
             short_param = f"{float(params):.2f}"
             display_text = f"{text}\n{short_param}"
             style += "font-size: 11px;"
@@ -141,9 +167,31 @@ class DropLabel(QLabel):
         self.setText(display_text)
         self.setStyleSheet(style)
 
-    def set_visual_source(self, gate_type, target_idx):
+    def set_visual_source(self, gate_type, target_idx, matrix=None):
         self.current_gate = gate_type
         self.target_idx = target_idx
+        self.custom_matrix = matrix
+        
+        # Handle custom gate source (control qubit for 2-qubit custom gates)
+        if gate_type == "U" and matrix is not None:
+            properties = CustomGateAnalyzer.analyze_matrix(matrix)
+            color = properties['color']
+            
+            # For custom gates, use a colored control dot
+            style = f"""
+                background-color: {color}; 
+                border-radius: 8px; 
+                min-width: 16px; min-height: 16px; 
+                max-width: 16px; max-height: 16px;
+                margin: 17px;
+                border: 2px solid white;
+            """
+            
+            tooltip = f"Custom {properties['qubit_count']}-qubit gate (control)\n{CustomGateAnalyzer.get_tooltip(properties)}"
+            self.setToolTip(tooltip)
+            self.setText("")
+            self.setStyleSheet(style)
+            return
         
         # Default: Control Dot (●)
         # Small, solid black circle centered in the box
@@ -163,9 +211,34 @@ class DropLabel(QLabel):
         self.setText(symbol)
         self.setStyleSheet(style)
 
-    def set_visual_target(self, gate_type):
+    def set_visual_target(self, gate_type, matrix=None):
         self.current_gate = "TARGET"
         self.target_idx = None
+        self.custom_matrix = matrix
+        
+        # Handle custom gate target (for 2-qubit custom gates)
+        if gate_type == "U" and matrix is not None:
+            properties = CustomGateAnalyzer.analyze_matrix(matrix)
+            color = properties['color']
+            
+            # For custom gates, use a colored circle with the gate icon
+            symbol = properties['icon']
+            style = f"""
+                background-color: {color}; 
+                border: 2px solid white;
+                border-radius: 15px;
+                color: white; 
+                font-size: 18px; 
+                font-weight: bold;
+                min-width: 30px; min-height: 30px;
+                max-width: 30px; max-height: 30px;
+            """
+            
+            tooltip = f"Custom {properties['qubit_count']}-qubit gate (target)\n{CustomGateAnalyzer.get_tooltip(properties)}"
+            self.setToolTip(tooltip)
+            self.setText(symbol)
+            self.setStyleSheet(style)
+            return
         
         # Default: CNOT Target (⊕)
         # Open circle with Cross. 
@@ -208,8 +281,10 @@ class DropLabel(QLabel):
     def clear_visual(self):
         self.current_gate = None
         self.target_idx = None
+        self.custom_matrix = None
         self.setText("")
-        self.setStyleSheet("border: none; background-color: transparent;") 
+        self.setStyleSheet("border: none; background-color: transparent;")
+        self.setToolTip("") 
 
     # --- Preview / Shadow helpers ---
     def show_shadow(self, gate_text):
@@ -303,15 +378,15 @@ class CircuitView(QWidget):
             zone.clear_visual()
         self.update()
 
-    def place_gate_visual(self, gate_text, q, t, target_index=None, params=None):
+    def place_gate_visual(self, gate_text, q, t, target_index=None, params=None, matrix=None):
         if (q, t) not in self.drop_zones: return
         zone = self.drop_zones[(q, t)]
         if target_index is not None:
-            zone.set_visual_source(gate_text, target_index)
+            zone.set_visual_source(gate_text, target_index, matrix)
             if (target_index, t) in self.drop_zones:
-                self.drop_zones[(target_index, t)].set_visual_target(gate_text)
+                self.drop_zones[(target_index, t)].set_visual_target(gate_text, matrix)
         else:
-            zone.set_visual_gate(gate_text, params)
+            zone.set_visual_gate(gate_text, params, matrix)
         self.update()
 
     def place_connector_visual(self, q, t):

@@ -8,13 +8,14 @@ class CircuitModel:
         self.num_qubits = num_qubits
         self.operations = []
 
-    def add_gate(self, gate_type, qubit_index, time_index, target_index=None, params=None):
+    def add_gate(self, gate_type, qubit_index, time_index, target_index=None, params=None, matrix=None):
         self.remove_gate(qubit_index, time_index)
         self.operations.append({
             'gate': gate_type,
             'qubit': qubit_index,
             'target': target_index,
             'params': params, # NEW: Store rotation angle
+            'matrix': matrix, # NEW: Store custom gate matrix
             'index': time_index
         })
         self.operations.sort(key=lambda x: x['index'])
@@ -39,6 +40,7 @@ class CircuitModel:
             'qubit': new_q,
             'target': op.get('target'),
             'params': op.get('params'),
+            'matrix': op.get('matrix'),  # Preserve custom gate matrix
             'index': new_t
         })
         self.operations.sort(key=lambda x: x['index'])
@@ -52,6 +54,8 @@ class CircuitModel:
         return self.operations
 
     def run_simulation(self):
+        from qiskit.circuit.library import UnitaryGate
+        
         qc = QuantumCircuit(self.num_qubits)
         
         for op in self.operations:
@@ -59,10 +63,25 @@ class CircuitModel:
             q = op['qubit']
             t = op.get('target')
             p = op.get('params') # Get parameters
+            m = op.get('matrix') # Get custom gate matrix
            
+            # --- Custom Gates ---
+            if g == 'custom' and m is not None:
+                # Convert stored matrix (list) back to numpy array
+                matrix = np.array(m)
+                # Create unitary gate
+                unitary = UnitaryGate(matrix)
+                # Apply to qubit(s)
+                if t is not None:
+                    # Two-qubit custom gate
+                    qc.append(unitary, [q, t])
+                else:
+                    # Single-qubit custom gate
+                    qc.append(unitary, [q])
+            
             # --- Rotation Gates ---
             # We explicitly cast to float to ensure Qiskit accepts it
-            if g == 'rx': qc.rx(float(p), q)
+            elif g == 'rx': qc.rx(float(p), q)
             elif g == 'ry': qc.ry(float(p), q)
             elif g == 'rz': qc.rz(float(p), q)
             elif g == 'p':  qc.p(float(p), q) # Phase Gate
@@ -95,11 +114,26 @@ class CircuitModel:
         
         return counts, statevector
 
-    # (Keep to_json and load_from_json as they were)
     def to_json(self):
-        return json.dumps({"num_qubits": self.num_qubits, "operations": self.operations})
+        """Serialize circuit to JSON, converting numpy arrays to lists."""
+        # Convert operations to JSON-serializable format
+        serializable_ops = []
+        for op in self.operations:
+            op_copy = op.copy()
+            # Convert numpy arrays to lists for JSON serialization
+            if 'matrix' in op_copy and op_copy['matrix'] is not None:
+                if isinstance(op_copy['matrix'], np.ndarray):
+                    op_copy['matrix'] = op_copy['matrix'].tolist()
+            serializable_ops.append(op_copy)
+        
+        return json.dumps({"num_qubits": self.num_qubits, "operations": serializable_ops})
 
     def load_from_json(self, json_str):
         data = json.loads(json_str)
         self.num_qubits = data["num_qubits"]
         self.operations = data["operations"]
+        # Convert matrix lists back to numpy arrays if needed
+        for op in self.operations:
+            if 'matrix' in op and op['matrix'] is not None:
+                if isinstance(op['matrix'], list):
+                    op['matrix'] = np.array(op['matrix'])

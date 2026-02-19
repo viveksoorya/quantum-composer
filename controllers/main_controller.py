@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import QInputDialog, QPushButton, QMessageBox
 from models.circuit_model import CircuitModel
 from models.code_generator import QiskitCodeGenerator
 from models.code_parser import QiskitCodeParser
+from views.custom_gate_dialog import CustomGateDialog
 import numpy as np
 
 class MainController:
@@ -93,9 +94,35 @@ class MainController:
     def on_gate_dropped(self, gate_type, qubit_index, time_index):
         target_index = None
         params = None
+        matrix = None
+        
+        # Handle Custom Gate
+        if gate_type == "CUSTOM":
+            dialog = CustomGateDialog(self.view, num_qubits=1)
+            if dialog.exec() == CustomGateDialog.DialogCode.Accepted:
+                result = dialog.get_result()
+                gate_type = "CUSTOM"  # Keep as CUSTOM type
+                matrix = result['matrix']
+                # Determine if this is a 2-qubit gate based on matrix size
+                if result['num_qubits'] == 2:
+                    target_index = self.view.show_input_dialog("Custom Gate", "Select Target Qubit:")
+                    if target_index is None or target_index == qubit_index:
+                        self.redraw_circuit_from_model()
+                        return
+                    
+                    # Check path is clear
+                    if not self.is_path_clear(qubit_index, target_index, time_index):
+                        QMessageBox.warning(self.view, "Invalid Placement", 
+                                            "Cannot place gate here: Intermediate wires are blocked by other gates.")
+                        self.redraw_circuit_from_model()
+                        return
+            else:
+                # User cancelled
+                self.redraw_circuit_from_model()
+                return
         
         # Handle Multi-Qubit Targets
-        if gate_type in ["CX", "CY", "CZ", "CH", "SWAP"]:
+        elif gate_type in ["CX", "CY", "CZ", "CH", "SWAP"]:
             target_index = self.view.show_input_dialog(f"{gate_type} Gate", "Select Target Qubit:")
             if target_index is None or target_index == qubit_index:
                 # Invalid selection; keep model unchanged and force a redraw from model
@@ -119,7 +146,7 @@ class MainController:
             else: return
 
         # Add gate to model (model enforces uniqueness) then redraw
-        self.model.add_gate(gate_type, qubit_index, time_index, target_index, params)
+        self.model.add_gate(gate_type, qubit_index, time_index, target_index, params, matrix)
         self.update_code_from_model()
         self.redraw_circuit_from_model()
 
@@ -174,8 +201,13 @@ class MainController:
             idx = op['index']
             target = op.get('target')
             params = op.get('params')
+            matrix = op.get('matrix')
 
-            self.view.circuit_view.place_gate_visual(gate, q, idx, target, params)
+            # For custom gates, display "U" with meaningful icon based on matrix
+            display_gate = "U" if gate == "CUSTOM" else gate
+            
+            # Pass matrix to view for custom gate rendering
+            self.view.circuit_view.place_gate_visual(display_gate, q, idx, target, params, matrix)
 
             # --- NEW: Draw Connectors for Multi-Qubit Gates ---
             if target is not None:
