@@ -1,0 +1,14 @@
+right now, there are *known issues* with drag and drop; issues that cannot be fixed by patchwork, but by rewriting things that dont work; 
+
+first let's subset all the relvant functions
+view files: palette_view (for multi qubit gates), circuit_view, styles, visualization_view
+
+these are the four main files
+firstly we need to get the style down:
+
+there are two points of failure:
+one:  the connectors of multi-qubit gates, the drag and drop of multi-qubit gates
+the other: the ghost of single-qubit gate
+
+clearly there are at least two visualization layers
+so we need to understand what is happening as soon as i drop a gate; what all functions are called

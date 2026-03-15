@@ -152,8 +152,10 @@ class MainController:
 
 
     def on_gate_deleted(self, q, t):
+        print(f"DEBUG: on_gate_deleted called for ({q}, {t})")
         self.model.remove_gate(q, t)
         self.update_code_from_model()
+        self.redraw_circuit_from_model()
 
     def on_gate_moved(self, oq, ot, nq, nt):
         # Use an atomic model operation for move; if it fails, redraw to restore view
