@@ -244,11 +244,9 @@ class CustomGateDialog(QDialog):
                     else:
                         matrix[i, j] = complex(float(text), 0)
                 except ValueError as e:
-                    msgbox = QMessageBox(QMessageBox.Icon.Warning, "Invalid Input",
+                    QMessageBox.warning(self, "Invalid Input", 
                                        f"Invalid value at [{i},{j}]: {text}\n"
-                                       f"Use format: a+bj or a-bj", parent=self)
-                    msgbox.setWindowModality(Qt.WindowModality.WindowModal)
-                    msgbox.exec()
+                                       f"Use format: a+bj or a-bj")
                     return None
         
         return matrix
@@ -280,9 +278,7 @@ class CustomGateDialog(QDialog):
                 row_str = " ".join([f"{matrix[i,j]:10.4f}" for j in range(dim)])
                 msg += f"|{row_str}|\n"
             
-            msgbox = QMessageBox(QMessageBox.Icon.Information, "Matrix Validation", msg, parent=self)
-            msgbox.setWindowModality(Qt.WindowModality.WindowModal)
-            msgbox.exec()
+            QMessageBox.information(self, "Matrix Validation", msg)
             return True
         else:
             # Show error details
@@ -292,9 +288,7 @@ class CustomGateDialog(QDialog):
             msg += f"U†U should equal I, but it doesn't.\n"
             msg += f"\nMake sure columns are orthonormal."
             
-            msgbox = QMessageBox(QMessageBox.Icon.Warning, "Matrix Validation", msg, parent=self)
-            msgbox.setWindowModality(Qt.WindowModality.WindowModal)
-            msgbox.exec()
+            QMessageBox.warning(self, "Matrix Validation", msg)
             return False
     
     def create_gate(self):
@@ -302,10 +296,7 @@ class CustomGateDialog(QDialog):
         # Validate name
         name = self.name_input.text().strip()
         if not name:
-            msgbox = QMessageBox(QMessageBox.Icon.Warning, "Missing Name", 
-                               "Please enter a gate name.", parent=self)
-            msgbox.setWindowModality(Qt.WindowModality.WindowModal)
-            msgbox.exec()
+            QMessageBox.warning(self, "Missing Name", "Please enter a gate name.")
             return
         
         # Validate matrix
