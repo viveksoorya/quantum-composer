@@ -148,7 +148,10 @@ class MainController:
         # Add gate to model (model enforces uniqueness) then redraw
         self.model.add_gate(gate_type, qubit_index, time_index, target_index, params, matrix)
         self.update_code_from_model()
-        self.redraw_circuit_from_model()
+        
+        # CRITICAL FIX: Schedule redraw AFTER Qt finishes the current event
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self.redraw_circuit_from_model)
 
 
     def on_gate_deleted(self, q, t):
@@ -165,9 +168,13 @@ class MainController:
             self.redraw_circuit_from_model()
             return
 
-        # Move succeeded — update code and redraw from authoritative model
+        # Move succeeded — update code and defer redraw to allow Qt to finish drop processing
         self.update_code_from_model()
-        self.redraw_circuit_from_model()
+        
+        # CRITICAL FIX: Schedule redraw AFTER Qt finishes the current event
+        # This prevents the widget geometry change from interfering with the drop event
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, self.redraw_circuit_from_model)
 
     # --- 3. Code Editor Logic ---
     def on_text_edited(self):

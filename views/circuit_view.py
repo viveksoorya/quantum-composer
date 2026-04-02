@@ -37,14 +37,24 @@ class DropLabel(QLabel):
     def mouseMoveEvent(self, e):
         if self.current_gate in ["CONNECTOR", "TARGET"]: return
         if e.buttons() == Qt.MouseButton.LeftButton and self.current_gate:
+            # Store the gate info before clearing
+            dragged_gate = self.current_gate
+            dragged_target = self.target_idx
+            dragged_matrix = self.custom_matrix
+            
+            # CRITICAL: Clear this zone's visual state so it can accept drops (including back to itself)
+            self.clear_visual()
+            
             drag = QDrag(self)
             mime = QMimeData()
-            payload = f"MOVE:{self.current_gate}:{self.qubit_idx}:{self.time_idx}"
+            payload = f"MOVE:{dragged_gate}:{self.qubit_idx}:{self.time_idx}"
             mime.setText(payload)
             drag.setMimeData(mime)
 
             # Create a styled, semi-transparent pixmap for the drag (shadow-like)
-            pixmap = QPixmap(self.width(), self.height())
+            # Increased size for better visual feedback and larger drop target
+            pixmap_size = 70
+            pixmap = QPixmap(pixmap_size, pixmap_size)
             pixmap.fill(Qt.GlobalColor.transparent)
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -57,13 +67,14 @@ class DropLabel(QLabel):
             painter.setFont(font)
             painter.setPen(QColor(255, 255, 255, 220))
             fm = QFontMetrics(font)
-            tx = (pixmap.width() - fm.horizontalAdvance(self.current_gate)) // 2
+            tx = (pixmap.width() - fm.horizontalAdvance(dragged_gate)) // 2
             ty = (pixmap.height() + fm.ascent() - fm.descent()) // 2
-            painter.drawText(tx, ty, self.current_gate)
+            painter.drawText(tx, ty, dragged_gate)
             painter.end()
 
             drag.setPixmap(pixmap)
-            drag.setHotSpot(self.rect().center())
+            # Hotspot should be at the center of the pixmap, not widget coordinates
+            drag.setHotSpot(QPoint(pixmap_size // 2, pixmap_size // 2))
 
             # Change cursor to indicate move
             QApplication.setOverrideCursor(Qt.CursorShape.ClosedHandCursor)
@@ -73,7 +84,8 @@ class DropLabel(QLabel):
                 QApplication.restoreOverrideCursor()
 
     def dragEnterEvent(self, event):
-        if self.current_gate == "CONNECTOR": event.ignore(); return
+        if self.current_gate == "CONNECTOR": 
+            event.ignore(); return
         # Show a lightweight shadow/preview when dragging over this zone
         if event.mimeData().hasText():
             text = event.mimeData().text()
@@ -89,6 +101,8 @@ class DropLabel(QLabel):
             else:
                 QApplication.setOverrideCursor(Qt.CursorShape.DragCopyCursor)
             event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def dragMoveEvent(self, event):
         if self.current_gate == "CONNECTOR": event.ignore(); return
@@ -103,7 +117,8 @@ class DropLabel(QLabel):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
-        if self.current_gate == "CONNECTOR": event.ignore(); return
+        if self.current_gate == "CONNECTOR": 
+            event.ignore(); return
         data = event.mimeData().text()
         # Clear any preview and restore cursor
         self.clear_shadow()
@@ -279,17 +294,28 @@ class DropLabel(QLabel):
         self.setStyleSheet("background-color: transparent; border: none;")
 
     def clear_visual(self):
+        """Reset the visual and logical state of the slot."""
         self.current_gate = None
         self.target_idx = None
         self.custom_matrix = None
         self.setText("")
-        self.setStyleSheet("border: none; background-color: transparent;")
-        self.setToolTip("") 
+        # Reset to default gate style instead of empty string
+        self.setStyleSheet("""
+            QLabel {
+                background-color: #f0f0f0;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+            }
+        """)
+        self.setToolTip("")  # Clear tooltips
+        # EXPLICITLY RE-ENABLE DROP ACCEPTANCE
+        self.setAcceptDrops(True)
 
     # --- Preview / Shadow helpers ---
     def show_shadow(self, gate_text):
         # Don't overwrite an actual gate visual; show a lightweight translucent preview instead
-        if self.current_gate is not None: return
+        if self.current_gate is not None:
+            return
         style = f"background-color: rgba(20,40,120,0.45); color: white; border-radius: 8px; font-weight: bold;"
         self.setText(gate_text)
         self.setStyleSheet(style)
@@ -326,6 +352,11 @@ class CircuitView(QWidget):
         self.display_visual_button = QPushButton("Show Visual State", self)
         self.display_visual_button.clicked.connect(self.show_visual_state)
         self.grid.addWidget(self.display_visual_button, num_qubits + 1, 0, 1, num_steps + 1)
+
+        # Add a button to display ALL zone states (for debugging stale state)
+        self.debug_state_button = QPushButton("DEBUG: Show ALL Zone States", self)
+        self.debug_state_button.clicked.connect(self.show_all_zone_states)
+        self.grid.addWidget(self.debug_state_button, num_qubits + 1, num_steps + 1, 1, 1)
 
         # Add phase color scheme legend at the bottom
         self.phase_legend = PhaseLegendWidget(self)
@@ -373,6 +404,8 @@ class CircuitView(QWidget):
                     p2 = target_zone.mapTo(self, target_zone.rect().center())
                     painter.drawLine(p1, p2)
 
+
+
     def clear_grid(self):
         for zone in self.drop_zones.values():
             zone.clear_visual()
@@ -415,3 +448,71 @@ class CircuitView(QWidget):
                     'position': t
                 })
         QMessageBox.information(self, "Visual State", str(visual_state))
+
+    def show_all_zone_states(self):
+        """DEBUG: Show ALL zones with their current_gate values (including None)."""
+        all_zones = []
+        for (q, t), zone in self.drop_zones.items():
+            all_zones.append({
+                'qubit': q,
+                'position': t,
+                'current_gate': zone.current_gate,
+                'target_idx': zone.target_idx,
+                'has_matrix': zone.custom_matrix is not None
+            })
+        
+        # Sort by qubit, then position for readability
+        all_zones.sort(key=lambda x: (x['qubit'], x['position']))
+        
+        # Format as readable string
+        debug_text = "=== ALL ZONE STATES ===\n\n"
+        for zone_info in all_zones:
+            gate_val = zone_info['current_gate'] if zone_info['current_gate'] else "None"
+            target = f", target={zone_info['target_idx']}" if zone_info['target_idx'] is not None else ""
+            matrix = ", custom_matrix=True" if zone_info['has_matrix'] else ""
+            debug_text += f"[q={zone_info['qubit']}, t={zone_info['position']}]: current_gate={gate_val}{target}{matrix}\n"
+        
+        debug_text += f"\nTotal zones: {len(all_zones)}"
+        
+        from PyQt6.QtWidgets import QTextEdit, QDialog, QVBoxLayout, QLabel
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("DEBUG: All Zone States")
+        dialog.setGeometry(100, 100, 600, 400)
+        
+        layout = QVBoxLayout()
+        
+        label = QLabel("Zone state inspection (use to detect stale current_gate values):")
+        layout.addWidget(label)
+        
+        text_display = QTextEdit()
+        text_display.setPlainText(debug_text)
+        text_display.setReadOnly(True)
+        text_display.setFontFamily("Courier")
+        layout.addWidget(text_display)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def update_circuit(self, operations):
+        """Update the circuit view based on the given operations."""
+        self.clear_grid()
+        for op in operations:
+            gate = op['gate']
+            q = op['qubit']
+            idx = op['index']
+            target = op.get('target')
+            params = op.get('params')
+            matrix = op.get('matrix')
+
+            # For custom gates, display "U" with meaningful icon based on matrix
+            display_gate = "U" if gate == "CUSTOM" else gate
+
+            # Pass matrix to view for custom gate rendering
+            self.place_gate_visual(display_gate, q, idx, target, params, matrix)
+
+            # Draw connectors for multi-qubit gates
+            if target is not None:
+                start, end = min(q, target), max(q, target)
+                for intermediate_q in range(start + 1, end):
+                    self.place_connector_visual(intermediate_q, idx)
