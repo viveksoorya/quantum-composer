@@ -43,13 +43,17 @@ jobs:
       run: |
         pyinstaller --noconsole --onefile --collect-all qiskit --collect-all qiskit_aer --hidden-import=matplotlib --name="QuantumComposer_Mac" main.py
 
-    - name: Upload Artifacts
+    - name: Upload Windows Artifact
       uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
+      if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
       with:
-        files: |
-          dist/QuantumComposer.exe
-          dist/QuantumComposer_Mac
+        files: dist/QuantumComposer.exe
+
+    - name: Upload macOS Artifact
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
+      with:
+        files: dist/QuantumComposer_Mac
 
   # JOB 2: Linux (Containerized for Compatibility + Speed)
   build-linux:
