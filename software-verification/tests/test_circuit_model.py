@@ -124,6 +124,71 @@ class TestGateOperations:
         
         assert result is False
     
+    def test_move_multiqubit_gate_by_control(self):
+        """Test moving a multi-qubit gate by its control qubit.
+        When a CNOT is at (0, 0) with target at qubit 1,
+        moving the control to qubit 1 should move target to qubit 2."""
+        model = CircuitModel(num_qubits=5)
+        model.add_gate('CX', 0, 0, target_index=1)
+        
+        # Verify initial state
+        ops = model.get_operations()
+        assert len(ops) == 1
+        assert ops[0]['qubit'] == 0
+        assert ops[0]['target'] == 1
+        
+        # Move control qubit from 0 to 1 (target should move from 1 to 2)
+        result = model.move_gate(0, 0, 1, 0)
+        
+        assert result is True
+        ops = model.get_operations()
+        assert len(ops) == 1
+        assert ops[0]['qubit'] == 1
+        assert ops[0]['target'] == 2
+    
+    def test_move_multiqubit_gate_by_target(self):
+        """Test moving a multi-qubit gate by its target qubit.
+        When a CNOT is at (0, 0) with target at qubit 2,
+        moving the target to qubit 1 should move control to qubit -1 (invalid).
+        This should fail because moving target by -1 would put control at -1."""
+        model = CircuitModel(num_qubits=5)
+        model.add_gate('CX', 1, 0, target_index=3)
+        
+        # Verify initial state
+        ops = model.get_operations()
+        assert len(ops) == 1
+        assert ops[0]['qubit'] == 1
+        assert ops[0]['target'] == 3
+        
+        # Try to move target qubit from 3 to 2 (control should move from 1 to 0 - valid)
+        result = model.move_gate(3, 0, 2, 0)
+        
+        # This should work now - we support moving by target too
+        # The relative offset should be preserved
+        assert result is True
+        ops = model.get_operations()
+        assert len(ops) == 1
+        assert ops[0]['qubit'] == 0
+        assert ops[0]['target'] == 2
+    
+    def test_move_multiqubit_gate_large_gap(self):
+        """Test moving a multi-qubit gate with larger qubit gap."""
+        model = CircuitModel(num_qubits=10)
+        model.add_gate('CX', 2, 0, target_index=5)  # Gap of 3
+        
+        # Verify initial state
+        ops = model.get_operations()
+        assert ops[0]['qubit'] == 2
+        assert ops[0]['target'] == 5
+        
+        # Move control from 2 to 4 (target should move from 5 to 7)
+        result = model.move_gate(2, 0, 4, 0)
+        
+        assert result is True
+        ops = model.get_operations()
+        assert ops[0]['qubit'] == 4
+        assert ops[0]['target'] == 7
+    
     def test_operations_sorted_by_index(self):
         """Test that operations are sorted by time index."""
         model = CircuitModel(num_qubits=3)

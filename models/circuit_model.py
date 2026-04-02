@@ -22,12 +22,86 @@ class CircuitModel:
 
     def move_gate(self, old_q, old_t, new_q, new_t):
         """Atomically move a gate from (old_q, old_t) to (new_q, new_t).
+        For multi-qubit gates, maintains the relative offset between control and target.
         Returns True on success, False if the source doesn't exist or target occupied by a different gate.
         """
+        # Try to find the operation by control qubit
         op = next((o for o in self.operations if o['qubit'] == old_q and o['index'] == old_t), None)
+        
+        # If not found as control, check if it's a target qubit of a multi-qubit gate
         if not op:
-            return False
-
+            op = next((o for o in self.operations if o.get('target') == old_q and o['index'] == old_t), None)
+            if op:
+                # We're moving by the target qubit
+                # Calculate the offset: if control is at q_control and target is at old_q,
+                # then offset = old_q - q_control
+                # After move, new target should be at new_q
+                # So new control should be at: new_q - offset = new_q - (old_q - q_control)
+                offset = old_q - op['qubit']
+                new_control_q = new_q - offset
+                
+                # If new control would be invalid, reject the move
+                if new_control_q < 0 or new_control_q >= self.num_qubits:
+                    return False
+                
+                # Check for conflicts at both positions
+                control_conflict = next((o for o in self.operations if o['qubit'] == new_control_q and o['index'] == new_t), None)
+                if control_conflict and not (control_conflict is op):
+                    return False
+                
+                target_conflict = next((o for o in self.operations if o['qubit'] == new_q and o['index'] == new_t), None)
+                if target_conflict and not (target_conflict is op):
+                    return False
+                
+                # Perform move
+                self.remove_gate(op['qubit'], old_t)
+                self.operations.append({
+                    'gate': op['gate'],
+                    'qubit': new_control_q,
+                    'target': new_q,
+                    'params': op.get('params'),
+                    'matrix': op.get('matrix'),
+                    'index': new_t
+                })
+                self.operations.sort(key=lambda x: x['index'])
+                return True
+            else:
+                return False
+        
+        # We found the operation by control qubit
+        # If it's a multi-qubit gate, calculate the new target position
+        if op.get('target') is not None:
+            # Calculate the offset between control and target
+            offset = op.get('target') - old_q
+            new_target_q = new_q + offset
+            
+            # Validate the new target position
+            if new_target_q < 0 or new_target_q >= self.num_qubits:
+                return False
+            
+            # Check for conflicts at both positions
+            control_conflict = next((o for o in self.operations if o['qubit'] == new_q and o['index'] == new_t), None)
+            if control_conflict and not (control_conflict is op):
+                return False
+            
+            target_conflict = next((o for o in self.operations if o['qubit'] == new_target_q and o['index'] == new_t), None)
+            if target_conflict and not (target_conflict is op):
+                return False
+            
+            # Perform move with adjusted target
+            self.remove_gate(old_q, old_t)
+            self.operations.append({
+                'gate': op['gate'],
+                'qubit': new_q,
+                'target': new_target_q,
+                'params': op.get('params'),
+                'matrix': op.get('matrix'),
+                'index': new_t
+            })
+            self.operations.sort(key=lambda x: x['index'])
+            return True
+        
+        # Single-qubit gate
         # If target already has a gate (different from the moving one), reject
         conflict = next((o for o in self.operations if o['qubit'] == new_q and o['index'] == new_t), None)
         if conflict and not (conflict is op):
