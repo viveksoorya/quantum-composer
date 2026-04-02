@@ -47,12 +47,14 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
       with:
+        draft: false
         files: dist/QuantumComposer.exe
 
     - name: Upload macOS Artifact
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
       with:
+        draft: false
         files: dist/QuantumComposer_Mac
 
   # JOB 2: Linux (Containerized for Compatibility + Speed)
@@ -87,5 +89,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        draft: false
         files: |
           dist/QuantumComposer_Linux
+
