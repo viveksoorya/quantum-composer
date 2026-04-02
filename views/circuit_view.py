@@ -310,6 +310,11 @@ class DropLabel(QLabel):
         self.setToolTip("")  # Clear tooltips
         # EXPLICITLY RE-ENABLE DROP ACCEPTANCE
         self.setAcceptDrops(True)
+        # CRITICAL: Ensure the full 50x50 area is the drop target
+        # Clear any masks and force geometry update
+        self.clearMask()
+        self.setFixedSize(50, 50)
+        self.update()
 
     # --- Preview / Shadow helpers ---
     def show_shadow(self, gate_text):
