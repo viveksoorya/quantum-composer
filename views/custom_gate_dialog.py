@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QGridLayout, QMessageBox,
-                             QComboBox, QGroupBox, QScrollArea, QWidget)
+                             QComboBox, QGroupBox, QScrollArea, QWidget, QApplication)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
 import numpy as np
 
 
@@ -14,6 +15,15 @@ class CustomGateDialog(QDialog):
         self.matrix = None
         self.gate_name = None
         self.setup_ui()
+    
+    def showEvent(self, event):
+        """Reset cursor to default when dialog is shown."""
+        super().showEvent(event)
+        # Restore any override cursors that may be set from drag operations
+        while QApplication.overrideCursor() is not None:
+            QApplication.restoreOverrideCursor()
+        # Set the dialog to use arrow cursor
+        self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
         
     def setup_ui(self):
         self.setWindowTitle("Create Custom Unitary Gate")
